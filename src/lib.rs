@@ -4,12 +4,6 @@ use embedded_hal as hal;
 use nb::block;
 use void;
 
-#[derive(Debug)]
-pub enum TError<S, P> {
-    Serial(S),
-    Pin(P),
-}
-
 const NUM_ROWS: usize = 8;
 const NUM_COLS: usize = 16;
 const SPI_BYTES: usize = NUM_COLS / 8;
@@ -80,8 +74,9 @@ where
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
+    mod mock;
 
     #[test]
     fn test_prepare_row() {
