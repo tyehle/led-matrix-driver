@@ -1,18 +1,30 @@
-
 #[cfg(test)]
-
 use embedded_hal as hal;
 use heapless;
 use heapless::consts::*;
 
+#[derive(Clone, Copy)]
 pub struct MockPin {
     pub state: bool,
+    pub cycles: u32,
+}
+
+impl MockPin {
+    pub fn new() -> MockPin {
+        MockPin {
+            state: false,
+            cycles: 0,
+        }
+    }
 }
 
 impl hal::digital::v2::OutputPin for MockPin {
     type Error = ();
 
     fn set_low(&mut self) -> Result<(), Self::Error> {
+        if self.state {
+            self.cycles += 1;
+        }
         self.state = false;
         Ok(())
     }
@@ -24,13 +36,16 @@ impl hal::digital::v2::OutputPin for MockPin {
 }
 
 pub struct MockTimer {
-    pub tries: i32
+    pub tries: i32,
 }
 
 impl hal::timer::CountDown for MockTimer {
     type Time = i32;
 
-    fn start<T>(&mut self, duration: T) where T: Into<Self::Time> {
+    fn start<T>(&mut self, duration: T)
+    where
+        T: Into<Self::Time>,
+    {
         self.tries = duration.into();
     }
 
@@ -63,19 +78,24 @@ impl hal::spi::FullDuplex<u8> for MockSPI {
 
 mod test {
     use super::*;
-    use hal::prelude::*;
     use hal::digital::v2::OutputPin;
+    use hal::prelude::*;
     use nb::block;
 
     #[test]
     fn test_mock_pin() {
-        let mut pin = MockPin { state: false };
+        let mut pin = MockPin::new();
 
         pin.set_low().unwrap();
         assert_eq!(pin.state, false);
+        assert_eq!(pin.cycles, 0);
 
         pin.set_high().unwrap();
         assert_eq!(pin.state, true);
+        assert_eq!(pin.cycles, 0);
+
+        pin.set_low().unwrap();
+        assert_eq!(pin.cycles, 1);
     }
 
     #[test]
@@ -91,7 +111,9 @@ mod test {
 
     #[test]
     fn test_mock_spi() {
-        let mut bus = MockSPI { written: heapless::Vec::new() };
+        let mut bus = MockSPI {
+            written: heapless::Vec::new(),
+        };
 
         bus.send(0u8).unwrap();
         bus.send(157u8).unwrap();

@@ -32,7 +32,11 @@ pub enum LEDError<P, S> {
 }
 
 impl<Pin, Timer, SPI> LEDArray<Pin, Timer, SPI> {
-    pub fn write_layer(&mut self, layer: &[u8], row: Option<usize>) -> Result<(), LEDError<Pin::Error, SPI::Error>>
+    pub fn write_layer(
+        &mut self,
+        layer: &[u8],
+        row: Option<usize>,
+    ) -> Result<(), LEDError<Pin::Error, SPI::Error>>
     where
         Pin: OutputPin,
         Timer: hal::timer::CountDown,
@@ -90,7 +94,7 @@ impl<Pin, Timer, SPI> LEDArray<Pin, Timer, SPI> {
             self.prepare_row(row, &mut layers);
 
             for layer in 0..LAYER_BITS {
-                self.write_layer(&layers[layer], if layer == 0 {Some(row)} else {None})?;
+                self.write_layer(&layers[layer], if layer == 0 { Some(row) } else { None })?;
 
                 // set the timer for this layer
                 let real_delay = base_time; // TODO: Change the delay based on the layer number
@@ -168,13 +172,15 @@ mod tests {
         LEDArray {
             array: [[0; 16]; 8],
 
-            row_pins: [MockPin { state: false }; 3],
+            row_pins: [MockPin::new(); 3],
 
             timer: MockTimer { tries: 0 },
 
-            spi: MockSPI { written: heapless::Vec::new() },
-            reg_pin: MockPin { state: false },
-            output_disable: MockPin { state: false },
+            spi: MockSPI {
+                written: heapless::Vec::new(),
+            },
+            reg_pin: MockPin::new(),
+            output_disable: MockPin::new(),
         }
     }
 
@@ -199,11 +205,18 @@ mod tests {
         let mut array = mock_array();
 
         array.timer.tries = 6;
+        array.reg_pin.set_high().unwrap();
         array.write_layer(&[83, 106], None).unwrap_or(());
         assert_eq!(array.spi.written, [83, 106]);
         assert_eq!(array.timer.tries, 0);
+        assert_eq!(array.reg_pin.cycles, 1);
+        assert_eq!(array.output_disable.cycles, 0);
+        assert_eq!(array.output_disable.state, false);
 
         array.write_layer(&[13], Some(3)).unwrap_or(());
+        assert_eq!(array.reg_pin.cycles, 2);
+        assert_eq!(array.output_disable.cycles, 1);
+        assert_eq!(array.output_disable.state, false);
         assert_eq!(array.row_pins[2].state, false);
         assert_eq!(array.row_pins[1].state, true);
         assert_eq!(array.row_pins[0].state, true);
