@@ -75,7 +75,7 @@ impl<R0, R1, R2, Timer, SPI, Reg, OD> LEDArray<R0, R1, R2, Timer, SPI, Reg, OD> 
 
         // write the shift register data
         for &data in layer {
-            block!(self.spi.send(data)).map_err(LEDError::SPIError)?;
+            block!(self.spi.send(!data)).map_err(LEDError::SPIError)?;
         }
 
         // wait for the previous layer's time to end
@@ -98,7 +98,7 @@ impl<R0, R1, R2, Timer, SPI, Reg, OD> LEDArray<R0, R1, R2, Timer, SPI, Reg, OD> 
                 // enable the correct row
                 self.output_disable.set_low().map_err(LEDError::PinError)?;
             }
-        }
+        };
 
         Ok(())
     }
@@ -137,7 +137,7 @@ impl<R0, R1, R2, Timer, SPI, Reg, OD> LEDArray<R0, R1, R2, Timer, SPI, Reg, OD> 
 
         for layer in 0..buf.len() {
             let mut output = 0u16;
-            for brightness in &row {
+            for brightness in row.iter().rev() {
                 // grab brightness mod 2^layer
                 let tmp = brightness % (2 << layer);
                 // left shift output
@@ -147,10 +147,7 @@ impl<R0, R1, R2, Timer, SPI, Reg, OD> LEDArray<R0, R1, R2, Timer, SPI, Reg, OD> 
             }
 
             // update buffer[layer]
-            for byte_number in (0..SPI_BYTES).rev() {
-                buf[layer][byte_number] = output as u8;
-                output = output >> 8;
-            }
+            buf[layer] = output.to_be_bytes();
         }
     }
 }
@@ -220,10 +217,10 @@ mod tests {
         let mut buf = [[0u8; 2]; 4];
         array.prepare_row(0, &mut buf);
 
-        assert_eq!(buf[0], [0b10101010, 0b10101010]); // for 1s
-        assert_eq!(buf[1], [0b11001100, 0b11001100]); // for 2s
-        assert_eq!(buf[2], [0b11110000, 0b11110000]); // for 4s
-        assert_eq!(buf[3], [0b11111111, 0b00000000]); // for 8s
+        assert_eq!(buf[0], [0b01010101, 0b01010101]); // for 1s
+        assert_eq!(buf[1], [0b00110011, 0b00110011]); // for 2s
+        assert_eq!(buf[2], [0b00001111, 0b00001111]); // for 4s
+        assert_eq!(buf[3], [0b00000000, 0b11111111]); // for 8s
     }
 
     #[test]
@@ -232,8 +229,8 @@ mod tests {
 
         array.timer.tries = 6;
         array.reg_pin.set_high().unwrap();
-        array.write_layer(&[83, 106], None).unwrap_or(());
-        assert_eq!(array.spi.written, [83, 106]);
+        array.write_layer(&[0x57, 0x3f], None).unwrap_or(());
+        assert_eq!(array.spi.written, [0xa8, 0xc0]);
         assert_eq!(array.timer.tries, 0);
         assert_eq!(array.reg_pin.cycles, 1);
         assert_eq!(array.output_disable.cycles, 0);
