@@ -81,11 +81,11 @@ impl<Pin, Timer, SPI> LEDArray<Pin, Timer, SPI> {
         Ok(())
     }
 
-    pub fn scan<T>(&mut self, base_time: T) -> Result<(), LEDError<Pin::Error, SPI::Error>>
+    pub fn scan<T>(&mut self, base_freq: T) -> Result<(), LEDError<Pin::Error, SPI::Error>>
     where
         Pin: OutputPin,
         Timer: hal::timer::CountDown,
-        T: Into<Timer::Time> + Copy,
+        T: Into<Timer::Time> + Copy + core::ops::Shl<usize, Output=T>,
         SPI: FullDuplex<u8>,
     {
         let mut layers = [[0u8; SPI_BYTES]; LAYER_BITS];
@@ -97,8 +97,8 @@ impl<Pin, Timer, SPI> LEDArray<Pin, Timer, SPI> {
                 self.write_layer(&layers[layer], if layer == 0 { Some(row) } else { None })?;
 
                 // set the timer for this layer
-                let real_delay = base_time; // TODO: Change the delay based on the layer number
-                self.timer.start(real_delay);
+                let freq = base_freq << (LAYER_BITS - layer - 1);
+                self.timer.start(freq);
             }
         }
 
