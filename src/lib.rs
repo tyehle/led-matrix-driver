@@ -14,16 +14,16 @@ const NUM_ROWS: usize = 1 << ROW_BITS;
 const NUM_COLS: usize = 1 << COL_BITS;
 const SPI_BYTES: usize = NUM_COLS / 8;
 
-pub struct LEDArray<Pin, Timer, SPI> {
+pub struct LEDArray<R0, R1, R2, Timer, SPI, Reg, OD> {
     pub array: [[u8; NUM_COLS]; NUM_ROWS],
 
-    pub row_pins: [Pin; ROW_BITS],
+    pub row_pins: (R0, R1, R2),
 
     pub timer: Timer,
 
     pub spi: SPI,
-    pub reg_pin: Pin,
-    pub output_disable: Pin,
+    pub reg_pin: Reg,
+    pub output_disable: OD,
 }
 
 pub enum LEDError<P, S> {
@@ -31,16 +31,44 @@ pub enum LEDError<P, S> {
     SPIError(S),
 }
 
-impl<Pin, Timer, SPI> LEDArray<Pin, Timer, SPI> {
-    pub fn write_layer(
+impl<R0, R1, R2, Timer, SPI, Reg, OD> LEDArray<R0, R1, R2, Timer, SPI, Reg, OD> {
+    fn write_row<PinError>(&mut self, row: usize) -> Result<(), PinError>
+    where
+        R0: OutputPin<Error = PinError>,
+        R1: OutputPin<Error = PinError>,
+        R2: OutputPin<Error = PinError>,
+    {
+        #[inline]
+        fn set_pin<P>(pin: &mut P, value: bool) -> Result<(), P::Error>
+        where
+            P: OutputPin,
+        {
+            if value {
+                pin.set_high()
+            } else {
+                pin.set_low()
+            }
+        }
+
+        set_pin(&mut self.row_pins.0, ((row >> 0) & 1) == 1)?;
+        set_pin(&mut self.row_pins.1, ((row >> 1) & 1) == 1)?;
+        set_pin(&mut self.row_pins.2, ((row >> 2) & 1) == 1)?;
+        Ok(())
+    }
+
+    pub fn write_layer<PinError>(
         &mut self,
         layer: &[u8],
         row: Option<usize>,
-    ) -> Result<(), LEDError<Pin::Error, SPI::Error>>
+    ) -> Result<(), LEDError<PinError, SPI::Error>>
     where
-        Pin: OutputPin,
+        R0: OutputPin<Error = PinError>,
+        R1: OutputPin<Error = PinError>,
+        R2: OutputPin<Error = PinError>,
         Timer: hal::timer::CountDown,
         SPI: FullDuplex<u8>,
+        Reg: OutputPin<Error = PinError>,
+        OD: OutputPin<Error = PinError>,
     {
         // prepare to latch the shift registers
         self.reg_pin.set_low().map_err(LEDError::PinError)?;
@@ -62,13 +90,7 @@ impl<Pin, Timer, SPI> LEDArray<Pin, Timer, SPI> {
                 // disabel the columns while we are writing to the row pins
                 self.output_disable.set_high().map_err(LEDError::PinError)?;
                 // update the row pins
-                for (i, row_pin) in self.row_pins.iter_mut().enumerate() {
-                    if ((row >> i) & 1) == 1 {
-                        row_pin.set_high().map_err(LEDError::PinError)?;
-                    } else {
-                        row_pin.set_low().map_err(LEDError::PinError)?;
-                    }
-                }
+                self.write_row(row).map_err(LEDError::PinError)?;
 
                 // latch the shift registers
                 self.reg_pin.set_high().map_err(LEDError::PinError)?;
@@ -81,12 +103,16 @@ impl<Pin, Timer, SPI> LEDArray<Pin, Timer, SPI> {
         Ok(())
     }
 
-    pub fn scan<T>(&mut self, base_freq: T) -> Result<(), LEDError<Pin::Error, SPI::Error>>
+    pub fn scan<T, PinError>(&mut self, base_freq: T) -> Result<(), LEDError<PinError, SPI::Error>>
     where
-        Pin: OutputPin,
+        R0: OutputPin<Error = PinError>,
+        R1: OutputPin<Error = PinError>,
+        R2: OutputPin<Error = PinError>,
         Timer: hal::timer::CountDown,
-        T: Into<Timer::Time> + Copy + core::ops::Shl<usize, Output=T>,
+        T: Into<Timer::Time> + Copy + core::ops::Shl<usize, Output = T>,
         SPI: FullDuplex<u8>,
+        Reg: OutputPin<Error = PinError>,
+        OD: OutputPin<Error = PinError>,
     {
         let mut layers = [[0u8; SPI_BYTES]; LAYER_BITS];
 
@@ -168,11 +194,11 @@ mod tests {
     mod mock;
     use mock::*;
 
-    fn mock_array() -> LEDArray<MockPin, MockTimer, MockSPI> {
+    fn mock_array() -> LEDArray<MockPin, MockPin, MockPin, MockTimer, MockSPI, MockPin, MockPin> {
         LEDArray {
             array: [[0; 16]; 8],
 
-            row_pins: [MockPin::new(); 3],
+            row_pins: (MockPin::new(), MockPin::new(), MockPin::new()),
 
             timer: MockTimer { tries: 0 },
 
@@ -217,8 +243,8 @@ mod tests {
         assert_eq!(array.reg_pin.cycles, 2);
         assert_eq!(array.output_disable.cycles, 1);
         assert_eq!(array.output_disable.state, false);
-        assert_eq!(array.row_pins[2].state, false);
-        assert_eq!(array.row_pins[1].state, true);
-        assert_eq!(array.row_pins[0].state, true);
+        assert_eq!(array.row_pins.2.state, false);
+        assert_eq!(array.row_pins.1.state, true);
+        assert_eq!(array.row_pins.0.state, true);
     }
 }
