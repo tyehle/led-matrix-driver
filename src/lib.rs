@@ -4,7 +4,6 @@ use embedded_hal as hal;
 use hal::digital::v2::OutputPin;
 use hal::spi::FullDuplex;
 use nb::block;
-use void;
 
 const ROW_BITS: usize = 3;
 const COL_BITS: usize = 4;
@@ -150,39 +149,6 @@ impl<R0, R1, R2, Timer, SPI, Reg, OD> LEDArray<R0, R1, R2, Timer, SPI, Reg, OD> 
             buf[layer] = output.to_be_bytes();
         }
     }
-}
-
-pub fn timing<T, D>(timer: &mut T, base_delay: D) -> Result<(), void::Void>
-where
-    T: hal::timer::CountDown,
-    T::Time: core::convert::From<D>,
-    D: core::ops::Mul<Output = D>,
-    i32: core::convert::Into<D>,
-{
-    timer.start(base_delay * (1 << 3).into());
-    // do some other stuff
-    (0..10_000).sum::<i32>();
-    // wait for the timer to finish
-    block!(timer.wait())
-}
-
-pub fn spi<S>(bus: &mut S) -> Result<(), S::Error>
-where
-    S: hal::spi::FullDuplex<u8>,
-{
-    for &data in &[7, 5, 1] {
-        block!(bus.send(data))?;
-    }
-    Ok(())
-}
-
-pub fn pins<P>(a: &mut P, b: &mut P) -> Result<(), P::Error>
-where
-    P: hal::digital::v2::OutputPin,
-{
-    a.set_high()?;
-    b.set_low()?;
-    Ok(())
 }
 
 #[cfg(test)]
